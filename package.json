@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "babel js --out-dir dist/js --extensions .jsx,.js --copy-files",
-    "watch": "babel js --out-dir dist/js --extensions .jsx,.js --copy-files --watch"
+    "build": "babel js --out-dir dist/js --extensions .jsx",
+    "watch": "babel js --out-dir dist/js --extensions .jsx --watch"
   },
   "devDependencies": {
     "@babel/cli": "^7.24.0",
