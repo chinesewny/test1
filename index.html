@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChineseClass By Krukong</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+    <!-- html2canvas — สำหรับ Export บัตรนักเรียนเป็น PNG -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        body { font-family: 'Sarabun', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .animate-fade-in-down { animation: fadeInDown 0.3s ease-out; }
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        /* ── Responsive table ── */
+        @media (max-width: 640px) {
+            .table-compact th, .table-compact td { padding: 8px 10px !important; font-size: 12px !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+<div id="root"></div>
+
+<!-- Plain JS (ลำดับสำคัญ: config → firebase-init) -->
+<script src="js/config.js"></script>
+<script src="js/firebase-init.js"></script>
+
+<!-- Babel JSX components (ลำดับสำคัญ: utils → auth → dashboard → components → app) -->
+<script type="text/babel" src="js/utils.jsx"></script>
+<script type="text/babel" src="js/auth.jsx"></script>
+<script type="text/babel" src="js/dashboard.jsx"></script>
+<script type="text/babel" src="js/components/course-manager.jsx"></script>
+<script type="text/babel" src="js/components/student-manager.jsx"></script>
+<script type="text/babel" src="js/components/academic-year.jsx"></script>
+<script type="text/babel" src="js/components/assignments.jsx"></script>
+<script type="text/babel" src="js/components/materials.jsx"></script>
+<script type="text/babel" src="js/components/attendance.jsx"></script>
+<script type="text/babel" src="js/components/grading.jsx"></script>
+<script type="text/babel" src="js/components/id-card.jsx"></script>
+<script type="text/babel" src="js/components/exam.jsx"></script>
+<script type="text/babel" src="js/components/timetable.jsx"></script>
+<script type="text/babel" src="js/components/randomizer.jsx"></script>
+<script type="text/babel" src="js/components/student-submit.jsx"></script>
+<script type="text/babel" src="js/app.jsx"></script>
+</body>
+</html>
