@@ -1,5 +1,11 @@
 // js/components/grading.jsx
 
+/* แปลงอักขระแป้นพิมพ์ไทย (Kedmanee) แถวตัวเลขกลับเป็น ASCII digit */
+const fixThaiKeyboard = (input) => {
+    const map = {'จ':'0','ๅ':'1','ๆ':'2','๘':'3','๔':'4','๕':'5','ู':'6','ึ':'7','ค':'8','ต':'9'};
+    return input.split('').map(c => map[c] !== undefined ? map[c] : c).join('');
+};
+
 // ── POSGrading — ให้คะแนน (POS Scan) ──
 window.POSGrading = () => {
     const { useState, useEffect, useRef } = React;
@@ -20,14 +26,13 @@ window.POSGrading = () => {
     const maxScore = selectedAssignObj ? Number(selectedAssignObj.maxScore) : 10;
 
     useEffect(() => {
-        const unsub = db.collection('assignments').orderBy('createdAt','desc').onSnapshot(
-            snap => {
+        db.collection('assignments').orderBy('createdAt','desc').get()
+            .then(snap => {
                 const list = snap.docs.map(d=>({id:d.id,...d.data()}));
                 setAssignments(list);
                 if (list.length > 0 && !selectedAssignment) setSelectedAssignment(list[0].title);
-            }, () => {}
-        );
-        return () => unsub();
+            })
+            .catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -46,11 +51,12 @@ window.POSGrading = () => {
 
     const handleScan = async (e) => {
         e.preventDefault();
-        if (!scanInput.trim()) return;
+        const rawInput = fixThaiKeyboard(scanInput.trim());
+        if (!rawInput) return;
         if (!selectedAssignment) { alert('กรุณาเลือกชิ้นงานก่อน'); return; }
         let student = null;
         try {
-            const doc = await db.collection('students').doc(scanInput).get();
+            const doc = await db.collection('students').doc(rawInput).get();
             if (doc.exists) student = doc.data();
         } catch { alert('ไม่สามารถเชื่อมต่อฐานข้อมูลได้'); setScanInput(''); return; }
         if (!student) { alert('ไม่พบรหัสนักเรียน'); setScanInput(''); return; }
@@ -312,23 +318,24 @@ window.GradeManager = () => {
     /* Export CSV */
     const exportCSV = () => {
         if (!selCourse) return;
-        const items = getItems(selCourse);
+        const items  = getItems(selCourse);
         const midMax = Number(selCourse.midterm||20);
         const finMax = Number(selCourse.final||30);
+        const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;  // ครอบ text ป้องกัน comma
         const bom = '\uFEFF';
-        const header = ['เลขที่','รหัส','ชื่อ-สกุล','ห้อง',
-            ...items.map(it=>`${it.label}(${it.score})`),
-            `รวมเก็บ(${Number(selCourse.continuous||50)})`,
-            `กลางภาค(${midMax})`,`แก้กลางภาค(${midMax})`,`ปลายภาค(${finMax})`,
-            'รวม(100)','เกรด','GPA'
+        const header = ['เลขที่','รหัส',q('ชื่อ-สกุล'),q('ห้อง'),
+            ...items.map(it=>q(`${it.label}(${it.score})`)),
+            q(`รวมเก็บ(${Number(selCourse.continuous||50)})`),
+            q(`กลางภาค(${midMax})`), q(`แก้กลางภาค(${midMax})`), q(`ปลายภาค(${finMax})`),
+            'รวม(100)', q('เกรด'), 'GPA'
         ].join(',');
         const rows = filteredStudents.map(s => {
-            const sd    = scores[s.id]||{};
-            const total = calcTotal(sd, selCourse);
-            const grade = calcGrade(total);
+            const sd      = scores[s.id]||{};
+            const total   = calcTotal(sd, selCourse);
+            const grade   = calcGrade(total);
             const contSum = items.reduce((sum,it)=>sum+Number(sd[`cont_${it.label}`]||0),0);
-            return [s.no,s.id,s.name,s.class,
-                ...items.map(it=>sd[`cont_${it.label}`]??''),
+            return [s.no, s.id, q(s.name), q(s.class),
+                ...items.map(it => sd[`cont_${it.label}`] ?? ''),
                 contSum,
                 sd.midterm??'', sd.midtermRetake??'', sd.final??'',
                 total||'', grade.letter, grade.gpa

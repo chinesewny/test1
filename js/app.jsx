@@ -201,7 +201,7 @@ function App() {
 
                     {user.role==='student' && currentView==='student-dashboard'  && <StudentDashboard user={user}/>}
                     {user.role==='student' && currentView==='submit-work'         && <StudentSubmitWork user={user}/>}
-                    {user.role==='student' && currentView==='take-exam'           && <StudentExam/>}
+                    {user.role==='student' && currentView==='take-exam'           && <StudentExam user={user}/>}
                     {user.role==='student' && currentView==='study-materials'     && <StudyMaterials/>}
                 </main>
             </div>

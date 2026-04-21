@@ -1,4 +1,12 @@
 // js/components/attendance.jsx
+
+/* แปลงอักขระแป้นพิมพ์ไทย (Kedmanee) แถวตัวเลขกลับเป็น ASCII digit
+   เช่น สแกน 10001 ด้วยแป้นพิมพ์ไทย → "ๅจจจๅ" → แปลงกลับเป็น "10001" */
+const fixThaiKeyboard = (input) => {
+    const map = {'จ':'0','ๅ':'1','ๆ':'2','๘':'3','๔':'4','๕':'5','ู':'6','ึ':'7','ค':'8','ต':'9'};
+    return input.split('').map(c => map[c] !== undefined ? map[c] : c).join('');
+};
+
 window.POSAttendance = () => {
     const { useState, useEffect, useRef } = React;
 
@@ -43,11 +51,12 @@ window.POSAttendance = () => {
 
     const handleScan = async (e) => {
         e.preventDefault();
-        if (!scanInput.trim()) return;
+        const rawInput = fixThaiKeyboard(scanInput.trim());
+        if (!rawInput) return;
 
         let student = null;
         try {
-            const doc = await db.collection('students').doc(scanInput).get();
+            const doc = await db.collection('students').doc(rawInput).get();
             if (doc.exists) student = doc.data();
         } catch {
             alert('ไม่สามารถเชื่อมต่อฐานข้อมูลได้'); setScanInput(''); return;

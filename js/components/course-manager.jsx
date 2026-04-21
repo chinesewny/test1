@@ -16,13 +16,21 @@ window.CourseManager = () => {
         classrooms: []
     };
 
-    const [courses,      setCourses]      = useStateCM([]);
-    const [showForm,     setShowForm]     = useStateCM(false);
-    const [saving,       setSaving]       = useStateCM(false);
-    const [editId,       setEditId]       = useStateCM(null);
-    const [expandedId,   setExpandedId]   = useStateCM(null);
-    const [form,         setForm]         = useStateCM(emptyForm);
-    const [classInput,   setClassInput]   = useStateCM('');
+    const [courses,         setCourses]         = useStateCM([]);
+    const [showForm,        setShowForm]        = useStateCM(false);
+    const [saving,          setSaving]          = useStateCM(false);
+    const [editId,          setEditId]          = useStateCM(null);
+    const [expandedId,      setExpandedId]      = useStateCM(null);
+    const [form,            setForm]            = useStateCM(emptyForm);
+    const [classInput,      setClassInput]      = useStateCM('');
+
+    /* ── ประกาศ ── */
+    const [announceCourse,  setAnnounceCourse]  = useStateCM(null); // course object ที่เลือกจัดการประกาศ
+    const [announceList,    setAnnounceList]    = useStateCM([]);
+    const [announceText,    setAnnounceText]    = useStateCM('');
+    const [announcePinned,  setAnnouncePinned]  = useStateCM(false);
+    const [announceSaving,  setAnnounceSaving]  = useStateCM(false);
+    const [announceLoading, setAnnounceLoading] = useStateCM(false);
 
     useEffectCM(() => {
         const unsub = db.collection('courses').onSnapshot(
@@ -31,6 +39,46 @@ window.CourseManager = () => {
         );
         return () => unsub();
     }, []);
+
+    /* โหลดประกาศเมื่อเลือกรายวิชา */
+    useEffectCM(() => {
+        if (!announceCourse) { setAnnounceList([]); return; }
+        setAnnounceLoading(true);
+        const unsub = db.collection('announcements')
+            .where('courseId', '==', announceCourse.id)
+            .orderBy('createdAt', 'desc')
+            .onSnapshot(
+                snap => { setAnnounceList(snap.docs.map(d => ({ id:d.id, ...d.data() }))); setAnnounceLoading(false); },
+                ()   => setAnnounceLoading(false)
+            );
+        return () => unsub();
+    }, [announceCourse?.id]);
+
+    const openAnnounce = (course) =>
+        setAnnounceCourse(prev => prev?.id === course.id ? null : course);
+
+    const saveAnnounce = async () => {
+        if (!announceText.trim()) return;
+        setAnnounceSaving(true);
+        try {
+            await db.collection('announcements').add({
+                courseId:   announceCourse.id,
+                courseName: announceCourse.name,
+                classrooms: announceCourse.classrooms || [],
+                message:    announceText.trim(),
+                pinned:     announcePinned,
+                createdAt:  firebase.firestore.FieldValue.serverTimestamp(),
+            });
+            setAnnounceText('');
+            setAnnouncePinned(false);
+        } catch { alert('บันทึกประกาศไม่สำเร็จ'); }
+        setAnnounceSaving(false);
+    };
+
+    const deleteAnnounce = async (id) => {
+        if (!window.confirm('ลบประกาศนี้?')) return;
+        await db.collection('announcements').doc(id).delete().catch(() => {});
+    };
 
     const openAdd  = ()  => { setForm(emptyForm); setEditId(null); setShowForm(true); window.scrollTo({top:0,behavior:'smooth'}); };
     const openEdit = (c) => {
@@ -345,6 +393,11 @@ window.CourseManager = () => {
                                     )}
                                 </div>
                                 <div className="flex gap-2 ml-4 shrink-0">
+                                    <button onClick={()=>openAnnounce(c)}
+                                        title="จัดการประกาศ"
+                                        className={`p-2 rounded-lg transition-colors ${announceCourse?.id===c.id ? 'bg-yellow-400 text-yellow-900' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}`}>
+                                        <Icon name="fa-bullhorn" size={14}/>
+                                    </button>
                                     <button onClick={()=>openEdit(c)}
                                         className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
                                         <Icon name="fa-edit" size={14}/>
@@ -368,6 +421,79 @@ window.CourseManager = () => {
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            )}
+
+                            {/* ── Panel จัดการประกาศ ── */}
+                            {announceCourse?.id === c.id && (
+                                <div className="border-t-2 border-yellow-300 bg-yellow-50 px-5 py-5 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-bold text-yellow-900 flex items-center gap-2">
+                                            <Icon name="fa-bullhorn" size={15}/> ประกาศสำหรับ: {c.name}
+                                        </h4>
+                                        <div className="flex flex-wrap gap-1">
+                                            {(c.classrooms||[]).map(cls => (
+                                                <span key={cls} className="text-xs bg-yellow-200 text-yellow-800 font-bold px-2 py-0.5 rounded-full">{cls}</span>
+                                            ))}
+                                            {(c.classrooms||[]).length === 0 && (
+                                                <span className="text-xs text-yellow-600 italic">ยังไม่มีห้องเรียน — นักเรียนจะไม่เห็นประกาศ</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* ฟอร์มเพิ่มประกาศ */}
+                                    <div className="bg-white rounded-xl border border-yellow-200 p-4 space-y-3">
+                                        <p className="text-sm font-bold text-gray-700">เพิ่มประกาศใหม่</p>
+                                        <textarea
+                                            rows={3}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-yellow-300 resize-none"
+                                            placeholder="พิมพ์ข้อความประกาศ..."
+                                            value={announceText}
+                                            onChange={e => setAnnounceText(e.target.value)}/>
+                                        <div className="flex items-center justify-between">
+                                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                <input type="checkbox" checked={announcePinned}
+                                                    onChange={e => setAnnouncePinned(e.target.checked)}
+                                                    className="w-4 h-4 accent-yellow-500"/>
+                                                <span className="text-sm text-gray-600 flex items-center gap-1">
+                                                    <Icon name="fa-thumbtack" size={12} className="text-yellow-600"/> ปักหมุด (แสดงก่อน)
+                                                </span>
+                                            </label>
+                                            <button onClick={saveAnnounce} disabled={announceSaving || !announceText.trim()}
+                                                className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:opacity-50 text-white text-sm font-bold rounded-lg">
+                                                {announceSaving
+                                                    ? <><Icon name="fa-spinner fa-spin" size={13}/> บันทึก...</>
+                                                    : <><Icon name="fa-paper-plane" size={13}/> โพสต์ประกาศ</>}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* รายการประกาศที่มีอยู่ */}
+                                    {announceLoading ? (
+                                        <div className="text-center py-4 text-yellow-600">
+                                            <Icon name="fa-spinner fa-spin" size={18} className="block mx-auto mb-1"/> กำลังโหลด...
+                                        </div>
+                                    ) : announceList.length === 0 ? (
+                                        <p className="text-center text-sm text-yellow-600 italic py-2">ยังไม่มีประกาศสำหรับรายวิชานี้</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {announceList.map(a => (
+                                                <div key={a.id} className={`flex items-start gap-3 bg-white rounded-xl border px-4 py-3 ${a.pinned ? 'border-yellow-400' : 'border-gray-200'}`}>
+                                                    {a.pinned && <Icon name="fa-thumbtack" size={13} className="text-yellow-500 mt-0.5 flex-shrink-0"/>}
+                                                    <p className="flex-1 text-sm text-gray-800 whitespace-pre-wrap">{a.message}</p>
+                                                    <div className="flex-shrink-0 text-right">
+                                                        <p className="text-xs text-gray-400 mb-1">
+                                                            {a.createdAt?.toDate ? a.createdAt.toDate().toLocaleDateString('th-TH') : ''}
+                                                        </p>
+                                                        <button onClick={() => deleteAnnounce(a.id)}
+                                                            className="text-xs text-red-400 hover:text-red-600 hover:underline">
+                                                            ลบ
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

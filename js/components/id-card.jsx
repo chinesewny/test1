@@ -90,10 +90,39 @@ window.IDCardGenerator = () => {
     const downloadSelected = async () => {
         if (selectedIds.length === 0) { alert('กรุณาเลือกบัตรก่อน'); return; }
         setDownloading(true);
-        for (const id of selectedIds) {
-            await downloadCard(id);
-            await new Promise(r => setTimeout(r, 800));
-        }
+        try {
+            const SCALE = 4;
+            const CARD_W = 324 * SCALE;
+            const CARD_H = 204 * SCALE;
+            const COLS   = 2;
+            const ROWS   = Math.ceil(selectedIds.length / COLS);
+            const combined = document.createElement('canvas');
+            combined.width  = CARD_W * COLS;
+            combined.height = CARD_H * ROWS;
+            const ctx = combined.getContext('2d');
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, combined.width, combined.height);
+
+            for (let i = 0; i < selectedIds.length; i++) {
+                const el = document.getElementById(`card-print-${selectedIds[i]}`);
+                if (!el) continue;
+                await Promise.all(
+                    Array.from(el.querySelectorAll('img')).map(img =>
+                        img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; })
+                    )
+                );
+                const canvas = await html2canvas(el, {
+                    scale: SCALE, useCORS: true, allowTaint: false,
+                    backgroundColor: '#ffffff', logging: false, imageTimeout: 10000,
+                });
+                ctx.drawImage(canvas, (i % COLS) * CARD_W, Math.floor(i / COLS) * CARD_H);
+            }
+
+            const a = document.createElement('a');
+            a.download = `บัตรนักเรียน_${selectedClass}_${selectedIds.length}ใบ.png`;
+            a.href = combined.toDataURL('image/png');
+            a.click();
+        } catch { alert('ดาวน์โหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); }
         setDownloading(false);
     };
 

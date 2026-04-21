@@ -73,7 +73,9 @@ window.AdminDashboard = ({ setCurrentView }) => {
    STUDENT DASHBOARD (ดึงข้อมูลจาก Firestore)
 ══════════════════════════════════════════ */
 window.StudentDashboard = ({ user }) => {
-    const [stats, setStats] = useStateDash({ score:null, pending:null, attendance:null });
+    const [stats,         setStats]         = useStateDash({ score:null, pending:null, attendance:null });
+    const [announcements, setAnnouncements] = useStateDash([]);
+    const [annLoading,    setAnnLoading]    = useStateDash(true);
 
     useEffectDash(() => {
         const loadStats = async () => {
@@ -93,6 +95,25 @@ window.StudentDashboard = ({ user }) => {
         loadStats();
     }, [user.id]);
 
+    /* โหลดประกาศจากรายวิชาที่ห้องเรียนของนักเรียนอยู่ */
+    useEffectDash(() => {
+        if (!user.class) { setAnnLoading(false); return; }
+        db.collection('announcements')
+            .where('classrooms', 'array-contains', user.class)
+            .get()
+            .then(snap => {
+                const list = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+                /* เรียงปักหมุดก่อน แล้วล่าสุดก่อน */
+                list.sort((a, b) => {
+                    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                    return (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0);
+                });
+                setAnnouncements(list);
+            })
+            .catch(() => {})
+            .finally(() => setAnnLoading(false));
+    }, [user.class]);
+
     return (
         <div className="space-y-6">
             <div className="bg-gradient-to-r from-red-800 to-red-600 rounded-2xl p-8 text-white shadow-lg">
@@ -101,9 +122,9 @@ window.StudentDashboard = ({ user }) => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {[
-                    {icon:'fa-chart-bar',      bg:'bg-orange-100',color:'text-orange-600',label:'คะแนนเก็บสะสม',  val: stats.score!==null ? stats.score : '—'},
-                    {icon:'fa-cloud-upload-alt',bg:'bg-blue-100',  color:'text-blue-600',  label:'งานรอตรวจ',      val: stats.pending!==null ? <span className={stats.pending>0?'text-red-500':'text-green-600'}>{stats.pending} งาน</span> : '—'},
-                    {icon:'fa-check-square',    bg:'bg-green-100', color:'text-green-600', label:'วันที่มาเรียน',  val: stats.attendance!==null ? `${stats.attendance} วัน` : '—'},
+                    {icon:'fa-chart-bar',       bg:'bg-orange-100', color:'text-orange-600', label:'คะแนนเก็บสะสม', val: stats.score!==null ? stats.score : '—'},
+                    {icon:'fa-cloud-upload-alt', bg:'bg-blue-100',   color:'text-blue-600',   label:'งานรอตรวจ',     val: stats.pending!==null ? <span className={stats.pending>0?'text-red-500':'text-green-600'}>{stats.pending} งาน</span> : '—'},
+                    {icon:'fa-check-square',     bg:'bg-green-100',  color:'text-green-600',  label:'วันที่มาเรียน', val: stats.attendance!==null ? `${stats.attendance} วัน` : '—'},
                 ].map((c,i) => (
                     <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
                         <div className={`p-4 ${c.bg} ${c.color} rounded-full w-12 h-12 flex items-center justify-center`}>
@@ -116,10 +137,53 @@ window.StudentDashboard = ({ user }) => {
                     </div>
                 ))}
             </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="font-bold text-lg mb-4">ประกาศจากครูผู้สอน</h3>
-                <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
-                    <p className="text-sm text-yellow-800">สัปดาห์หน้าจะมีการสอบกลางภาค ขอให้นักเรียนทบทวนคำศัพท์บทที่ 1-3 และเตรียมคอมพิวเตอร์ให้พร้อม</p>
+
+            {/* ── ประกาศจากครูผู้สอน ── */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+                    <Icon name="fa-bullhorn" size={16} className="text-yellow-600"/>
+                    <h3 className="font-bold text-lg text-gray-800">ประกาศจากครูผู้สอน</h3>
+                    {announcements.length > 0 && (
+                        <span className="ml-auto text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">
+                            {announcements.length} รายการ
+                        </span>
+                    )}
+                </div>
+                <div className="p-5 space-y-3">
+                    {annLoading ? (
+                        <div className="text-center py-6 text-gray-400">
+                            <Icon name="fa-spinner fa-spin" size={22} className="block mx-auto mb-2"/>
+                            <p className="text-sm">กำลังโหลดประกาศ...</p>
+                        </div>
+                    ) : announcements.length === 0 ? (
+                        <div className="text-center py-6 text-gray-400">
+                            <Icon name="fa-bell-slash" size={28} className="block mx-auto mb-2 opacity-40"/>
+                            <p className="text-sm">ยังไม่มีประกาศในขณะนี้</p>
+                        </div>
+                    ) : announcements.map(a => (
+                        <div key={a.id}
+                            className={`flex gap-3 p-4 rounded-xl border-l-4 ${a.pinned ? 'bg-yellow-50 border-yellow-400' : 'bg-gray-50 border-gray-300'}`}>
+                            <div className="flex-shrink-0 mt-0.5">
+                                {a.pinned
+                                    ? <Icon name="fa-thumbtack" size={14} className="text-yellow-500"/>
+                                    : <Icon name="fa-comment-alt" size={14} className="text-gray-400"/>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm text-gray-800 whitespace-pre-wrap">{a.message}</p>
+                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                    <span className="text-xs text-gray-400">
+                                        {a.createdAt?.toDate ? a.createdAt.toDate().toLocaleDateString('th-TH', {day:'numeric',month:'long',year:'numeric'}) : ''}
+                                    </span>
+                                    <span className="text-xs bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">
+                                        {a.courseName}
+                                    </span>
+                                    {a.pinned && (
+                                        <span className="text-xs bg-yellow-200 text-yellow-800 font-bold px-1.5 py-0.5 rounded">ปักหมุด</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         </div>
