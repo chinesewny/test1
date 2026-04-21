@@ -1,0 +1,14 @@
+{
+  "name": "chinese-class-system",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "babel js --out-dir dist/js --extensions .jsx,.js --copy-files",
+    "watch": "babel js --out-dir dist/js --extensions .jsx,.js --copy-files --watch"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  }
+}

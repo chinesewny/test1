@@ -11,12 +11,12 @@
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
     <!-- html2canvas — สำหรับ Export บัตรนักเรียนเป็น PNG -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -45,22 +45,22 @@
 <script src="js/config.js"></script>
 <script src="js/firebase-init.js"></script>
 
-<!-- Babel JSX components (ลำดับสำคัญ: utils → auth → dashboard → components → app) -->
-<script type="text/babel" src="js/utils.jsx"></script>
-<script type="text/babel" src="js/auth.jsx"></script>
-<script type="text/babel" src="js/dashboard.jsx"></script>
-<script type="text/babel" src="js/components/course-manager.jsx"></script>
-<script type="text/babel" src="js/components/student-manager.jsx"></script>
-<script type="text/babel" src="js/components/academic-year.jsx"></script>
-<script type="text/babel" src="js/components/assignments.jsx"></script>
-<script type="text/babel" src="js/components/materials.jsx"></script>
-<script type="text/babel" src="js/components/attendance.jsx"></script>
-<script type="text/babel" src="js/components/grading.jsx"></script>
-<script type="text/babel" src="js/components/id-card.jsx"></script>
-<script type="text/babel" src="js/components/exam.jsx"></script>
-<script type="text/babel" src="js/components/timetable.jsx"></script>
-<script type="text/babel" src="js/components/randomizer.jsx"></script>
-<script type="text/babel" src="js/components/student-submit.jsx"></script>
-<script type="text/babel" src="js/app.jsx"></script>
+<!-- Pre-compiled JS (ไม่ต้องแปลง JSX ในเบราว์เซอร์อีกต่อไป) -->
+<script src="dist/js/utils.js"></script>
+<script src="dist/js/auth.js"></script>
+<script src="dist/js/dashboard.js"></script>
+<script src="dist/js/components/course-manager.js"></script>
+<script src="dist/js/components/student-manager.js"></script>
+<script src="dist/js/components/academic-year.js"></script>
+<script src="dist/js/components/assignments.js"></script>
+<script src="dist/js/components/materials.js"></script>
+<script src="dist/js/components/attendance.js"></script>
+<script src="dist/js/components/grading.js"></script>
+<script src="dist/js/components/id-card.js"></script>
+<script src="dist/js/components/exam.js"></script>
+<script src="dist/js/components/timetable.js"></script>
+<script src="dist/js/components/randomizer.js"></script>
+<script src="dist/js/components/student-submit.js"></script>
+<script src="dist/js/app.js"></script>
 </body>
 </html>
