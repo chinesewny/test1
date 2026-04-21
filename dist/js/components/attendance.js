@@ -1,22 +1,5 @@
 // js/components/attendance.jsx
 
-/* แปลงอักขระแป้นพิมพ์ไทย (Kedmanee) แถวตัวเลขกลับเป็น ASCII digit
-   เช่น สแกน 10001 ด้วยแป้นพิมพ์ไทย → "ๅจจจๅ" → แปลงกลับเป็น "10001" */
-const fixThaiKeyboard = input => {
-  const map = {
-    'จ': '0',
-    'ๅ': '1',
-    'ๆ': '2',
-    '๘': '3',
-    '๔': '4',
-    '๕': '5',
-    'ู': '6',
-    'ึ': '7',
-    'ค': '8',
-    'ต': '9'
-  };
-  return input.split('').map(c => map[c] !== undefined ? map[c] : c).join('');
-};
 window.POSAttendance = () => {
   const {
     useState,

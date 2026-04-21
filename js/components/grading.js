@@ -1,22 +1,5 @@
 // js/components/grading.jsx
 
-/* แปลงอักขระแป้นพิมพ์ไทย (Kedmanee) แถวตัวเลขกลับเป็น ASCII digit */
-const fixThaiKeyboard = input => {
-  const map = {
-    'จ': '0',
-    'ๅ': '1',
-    'ๆ': '2',
-    '๘': '3',
-    '๔': '4',
-    '๕': '5',
-    'ู': '6',
-    'ึ': '7',
-    'ค': '8',
-    'ต': '9'
-  };
-  return input.split('').map(c => map[c] !== undefined ? map[c] : c).join('');
-};
-
 // ── POSGrading — ให้คะแนน (POS Scan) ──
 window.POSGrading = () => {
   const {
