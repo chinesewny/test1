@@ -53,15 +53,16 @@ window.POSGrading = () => {
     }).catch(() => {});
   }, []);
 
-  /* ── Step 1→2: เมื่อเลือกห้องแล้ว แสดงวิชาทั้งหมด ── */
+  /* ── Step 1→2: กรองวิชาตามห้องที่บันทึกในระบบจัดการรายวิชา ── */
   useEffect(() => {
     setSelectedCourseId('');
     setFilteredCourses([]);
     setFilteredAssigns([]);
     setSelectedAssign(null);
     if (!selectedClass) return;
-    setFilteredCourses(allCourses);
-    if (allCourses.length === 1) setSelectedCourseId(allCourses[0].id);
+    const fc = allCourses.filter(c => (c.classrooms || []).includes(selectedClass));
+    setFilteredCourses(fc);
+    if (fc.length === 1) setSelectedCourseId(fc[0].id);
   }, [selectedClass, allCourses]);
 
   /* ── Step 2→3: กรองงานตามวิชา ── */

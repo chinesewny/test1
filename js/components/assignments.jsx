@@ -2,10 +2,12 @@
 window.AssignmentReview = () => {
     const { useState, useEffect } = React;
 
-    const emptyForm = { title:'', description:'', deadline:'', maxScore:10, course:'' };
+    const emptyForm = { title:'', description:'', deadline:'', maxScore:10,
+                        targetCourseId:'', targetCourseName:'', chapterLabel:'' };
     const [tab,          setTab]          = useState('assign');
     const [assignments,  setAssignments]  = useState([]);
     const [submissions,  setSubmissions]  = useState([]);
+    const [courses,      setCourses]      = useState([]);
     const [loading,      setLoading]      = useState(true);
     const [showForm,     setShowForm]     = useState(false);
     const [form,         setForm]         = useState(emptyForm);
@@ -23,6 +25,9 @@ window.AssignmentReview = () => {
             snap => setSubmissions(snap.docs.map(d=>({id:d.id,...d.data()}))),
             () => {}
         );
+        db.collection('courses').orderBy('name').get()
+            .then(snap => setCourses(snap.docs.map(d=>({id:d.id,...d.data()}))))
+            .catch(()=>{});
         return () => { unsubA(); unsubS(); };
     }, []);
 
@@ -36,8 +41,16 @@ window.AssignmentReview = () => {
     const save = async () => {
         if (!form.title.trim()) return alert('กรุณากรอกชื่องาน');
         setSaving(true);
-        const data = { ...form, maxScore: Number(form.maxScore)||10,
-            createdAt: editId ? form.createdAt : firebase.firestore.FieldValue.serverTimestamp() };
+        const data = {
+            title:            form.title.trim(),
+            description:      form.description||'',
+            deadline:         form.deadline||'',
+            maxScore:         Number(form.maxScore)||10,
+            targetCourseId:   form.targetCourseId||'',
+            targetCourseName: form.targetCourseName||'',
+            chapterLabel:     form.chapterLabel||'',
+            createdAt: editId ? form.createdAt : firebase.firestore.FieldValue.serverTimestamp(),
+        };
         if (editId) await db.collection('assignments').doc(editId).update(data);
         else        await db.collection('assignments').add(data);
         setSaving(false);
@@ -105,9 +118,12 @@ window.AssignmentReview = () => {
                             <div key={a.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
                                 <div className="flex justify-between items-start gap-4 flex-wrap">
                                     <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                                             <h3 className="font-bold text-lg text-gray-800">{a.title}</h3>
-                                            {a.course && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{a.course}</span>}
+                                            {a.targetCourseName && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{a.targetCourseName}</span>}
+                                            {a.chapterLabel && <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">บท: {a.chapterLabel}</span>}
+                                            {/* backward-compat: แสดง course เก่า */}
+                                            {!a.targetCourseName && a.course && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{a.course}</span>}
                                         </div>
                                         {a.description && <p className="text-sm text-gray-500 mb-2">{a.description}</p>}
                                         <div className="flex gap-4 text-xs text-gray-400 flex-wrap">
@@ -220,11 +236,31 @@ window.AssignmentReview = () => {
                                         className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"/>
                                 </div>
                             </div>
-                            <div>
-                                <label className="text-sm font-medium text-gray-600 mb-1 block">รายวิชา</label>
-                                <input value={form.course} onChange={e=>setForm(f=>({...f,course:e.target.value}))}
-                                    placeholder="เช่น จ33201 ภาษาจีน 5"
-                                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"/>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-medium text-gray-600 mb-1 block">รายวิชา (เชื่อมกับบัญชีคะแนน)</label>
+                                    <select value={form.targetCourseId}
+                                        onChange={e => {
+                                            const c = courses.find(x=>x.id===e.target.value);
+                                            setForm(f=>({...f, targetCourseId:e.target.value, targetCourseName:c?.name||'', chapterLabel:''}));
+                                        }}
+                                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+                                        <option value="">— ไม่ระบุ —</option>
+                                        {courses.map(c=><option key={c.id} value={c.id}>{c.code?`[${c.code}] `:''}{c.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-gray-600 mb-1 block">บท / กลุ่มคะแนนเก็บ</label>
+                                    <select value={form.chapterLabel}
+                                        onChange={e=>setForm(f=>({...f,chapterLabel:e.target.value}))}
+                                        disabled={!form.targetCourseId}
+                                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50">
+                                        <option value="">— ไม่ระบุ —</option>
+                                        {(courses.find(c=>c.id===form.targetCourseId)?.continuousItems||[]).map(it=>(
+                                            <option key={it.label} value={it.label}>{it.label} (เต็ม {it.score})</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                             <div className="flex gap-3 pt-2">
                                 <button onClick={()=>setShowForm(false)}
