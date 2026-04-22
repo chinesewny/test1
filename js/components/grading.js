@@ -35,13 +35,12 @@ window.POSGrading = () => {
   const inputRef = useRef(null);
   const today = new Date().toISOString().split('T')[0];
   const maxScore = selectedAssign ? Number(selectedAssign.maxScore) : 10;
+  const FIXED_CLASSES = ['ม.4/1', 'ม.4/2', 'ม.4/3', 'ม.5/1', 'ม.5/2', 'ม.5/3', 'ม.6/1', 'ม.6/2', 'ม.6/3'];
 
-  /* ── Step 0: โหลดห้อง / วิชา / งาน ทั้งหมดครั้งเดียว ── */
+  /* ── Step 0: โหลดวิชา / งาน ทั้งหมดครั้งเดียว ── */
   useEffect(() => {
-    Promise.all([db.collection('students').get(), db.collection('courses').get(), db.collection('assignments').get()]).then(([sSnap, cSnap, aSnap]) => {
-      const classes = [...new Set(sSnap.docs.map(d => d.data().class).filter(Boolean))].sort();
-      setAllClasses(classes);
-      if (classes.length === 1) setSelectedClass(classes[0]);
+    setAllClasses(FIXED_CLASSES);
+    Promise.all([db.collection('courses').get(), db.collection('assignments').get()]).then(([cSnap, aSnap]) => {
       const courseList = cSnap.docs.map(d => ({
         id: d.id,
         ...d.data()
