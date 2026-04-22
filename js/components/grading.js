@@ -7,44 +7,130 @@ window.POSGrading = () => {
     useEffect,
     useRef
   } = React;
+
+  /* ── 3-step selection ── */
+  const [allClasses, setAllClasses] = useState([]); // ห้องทั้งหมด
+  const [selectedClass, setSelectedClass] = useState('');
+  const [allCourses, setAllCourses] = useState([]); // วิชาทั้งหมด
+  const [filteredCourses, setFilteredCourses] = useState([]); // วิชาที่มีห้องนี้
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [allAssignments, setAllAssignments] = useState([]); // งานทั้งหมด
+  const [filteredAssigns, setFilteredAssigns] = useState([]); // งานในวิชานี้
+  const [selectedAssign, setSelectedAssign] = useState(null); // {id,title,maxScore,...}
+
+  /* ── grading ── */
   const [scanInput, setScanInput] = useState('');
   const [selectedScore, setSelectedScore] = useState(null);
   const [manualScore, setManualScore] = useState('');
   const [showManualModal, setShowManualModal] = useState(false);
   const [currentScannedStudent, setCurrentScannedStudent] = useState(null);
-  const [gradeLog, setGradeLog] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [assignments, setAssignments] = useState([]);
-  const [selectedAssignment, setSelectedAssignment] = useState('');
+
+  /* ── right panel ── */
+  const [rightTab, setRightTab] = useState('roster'); // 'log' | 'roster'
+  const [gradeLog, setGradeLog] = useState([]);
+  const [rosterStudents, setRosterStudents] = useState([]);
+  const [gradedMap, setGradedMap] = useState({});
+  const [rosterLoading, setRosterLoading] = useState(false);
   const inputRef = useRef(null);
   const today = new Date().toISOString().split('T')[0];
-  const selectedAssignObj = assignments.find(a => a.title === selectedAssignment);
-  const maxScore = selectedAssignObj ? Number(selectedAssignObj.maxScore) : 10;
+  const maxScore = selectedAssign ? Number(selectedAssign.maxScore) : 10;
+
+  /* ── Step 0: โหลดห้อง / วิชา / งาน ทั้งหมดครั้งเดียว ── */
   useEffect(() => {
-    db.collection('assignments').orderBy('createdAt', 'desc').get().then(snap => {
-      const list = snap.docs.map(d => ({
+    Promise.all([db.collection('students').get(), db.collection('courses').orderBy('name').get(), db.collection('assignments').orderBy('createdAt', 'desc').get()]).then(([sSnap, cSnap, aSnap]) => {
+      const classes = [...new Set(sSnap.docs.map(d => d.data().class).filter(Boolean))].sort();
+      setAllClasses(classes);
+      if (classes.length === 1) setSelectedClass(classes[0]);
+      setAllCourses(cSnap.docs.map(d => ({
         id: d.id,
         ...d.data()
-      }));
-      setAssignments(list);
-      if (list.length > 0 && !selectedAssignment) setSelectedAssignment(list[0].title);
+      })));
+      setAllAssignments(aSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })));
     }).catch(() => {});
   }, []);
+
+  /* ── Step 1→2: กรองวิชาตามห้อง ── */
   useEffect(() => {
+    setSelectedCourseId('');
+    setFilteredCourses([]);
+    setFilteredAssigns([]);
+    setSelectedAssign(null);
+    if (!selectedClass) return;
+    const fc = allCourses.filter(c => (c.classrooms || []).includes(selectedClass));
+    setFilteredCourses(fc);
+    if (fc.length === 1) setSelectedCourseId(fc[0].id);
+  }, [selectedClass, allCourses]);
+
+  /* ── Step 2→3: กรองงานตามวิชา ── */
+  useEffect(() => {
+    setSelectedAssign(null);
+    setFilteredAssigns([]);
+    if (!selectedCourseId) return;
+    const fa = allAssignments.filter(a => a.targetCourseId === selectedCourseId);
+    setFilteredAssigns(fa);
+    if (fa.length === 1) setSelectedAssign(fa[0]);
+  }, [selectedCourseId, allAssignments]);
+
+  /* ── คะแนนวันนี้ real-time ── */
+  useEffect(() => {
+    setGradeLog([]);
+    if (!selectedAssign) return;
     inputRef.current?.focus();
-    if (!selectedAssignment) return;
-    const unsub = db.collection('grades').where('date', '==', today).where('assignment', '==', selectedAssignment).orderBy('timestamp', 'desc').onSnapshot(snap => setGradeLog(snap.docs.map(d => ({
+    const unsub = db.collection('grades').where('date', '==', today).where('assignment', '==', selectedAssign.title).orderBy('timestamp', 'desc').onSnapshot(snap => setGradeLog(snap.docs.map(d => ({
       firestoreId: d.id,
       ...d.data()
     }))), () => {});
     return () => unsub();
-  }, [selectedAssignment]);
+  }, [selectedAssign]);
+
+  /* ── โหลด roster นักเรียนในห้อง + ประวัติคะแนนงานนี้ ── */
+  useEffect(() => {
+    setRosterStudents([]);
+    setGradedMap({});
+    if (!selectedClass || !selectedAssign) return;
+    setRosterLoading(true);
+    Promise.all([db.collection('students').where('class', '==', selectedClass).get(), db.collection('grades').where('assignment', '==', selectedAssign.title).where('class', '==', selectedClass).get()]).then(([sSnap, gSnap]) => {
+      const list = sSnap.docs.map(d => d.data()).sort((a, b) => (Number(a.no) || 0) - (Number(b.no) || 0));
+      setRosterStudents(list);
+      const map = {};
+      gSnap.docs.forEach(d => {
+        const g = d.data();
+        if (!map[g.studentId] || (g.timestamp?.seconds || 0) > (map[g.studentId].ts || 0)) map[g.studentId] = {
+          score: g.score,
+          ts: g.timestamp?.seconds || 0
+        };
+      });
+      setGradedMap(map);
+    }).catch(() => {}).finally(() => setRosterLoading(false));
+  }, [selectedClass, selectedAssign]);
+
+  /* อัปเดต gradedMap เมื่อสแกนใหม่ */
+  useEffect(() => {
+    if (!gradeLog.length) return;
+    setGradedMap(prev => {
+      const next = {
+        ...prev
+      };
+      gradeLog.forEach(g => {
+        if (!next[g.studentId] || (g.timestamp?.seconds || 0) >= (next[g.studentId].ts || 0)) next[g.studentId] = {
+          score: g.score,
+          ts: g.timestamp?.seconds || 0
+        };
+      });
+      return next;
+    });
+  }, [gradeLog]);
   const handleScan = async e => {
     e.preventDefault();
     const rawInput = fixThaiKeyboard(scanInput.trim());
     if (!rawInput) return;
-    if (!selectedAssignment) {
-      alert('กรุณาเลือกชิ้นงานก่อน');
+    if (!selectedAssign) {
+      alert('กรุณาเลือกงานก่อน');
+      setScanInput('');
       return;
     }
     let student = null;
@@ -68,7 +154,7 @@ window.POSGrading = () => {
   const recordGrade = async (student, score) => {
     const s = Number(score);
     if (s < 0 || s > maxScore) {
-      alert(`คะแนนต้องอยู่ระหว่าง 0-${maxScore}`);
+      alert(`คะแนนต้องอยู่ระหว่าง 0–${maxScore}`);
       return;
     }
     setSaving(true);
@@ -78,14 +164,14 @@ window.POSGrading = () => {
         name: student.name,
         class: student.class,
         no: student.no,
-        assignment: selectedAssignment,
+        assignment: selectedAssign.title,
         score: s,
         maxScore,
         date: today,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
     } catch {
-      alert('บันทึกไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อ');
+      alert('บันทึกไม่สำเร็จ');
     }
     setSaving(false);
     setShowManualModal(false);
@@ -93,8 +179,25 @@ window.POSGrading = () => {
     setSelectedScore(null);
     inputRef.current?.focus();
   };
+  const gradedCount = rosterStudents.filter(s => gradedMap[s.id]).length;
+  const ungradedCount = rosterStudents.length - gradedCount;
+  const ready = !!selectedAssign;
+
+  /* ── Selector step indicator ── */
+  const Step = ({
+    num,
+    label,
+    done
+  }) => /*#__PURE__*/React.createElement("div", {
+    className: `flex items-center gap-1.5 text-xs font-bold ${done ? 'text-green-600' : 'text-gray-400'}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: `w-5 h-5 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`
+  }, done ? /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-check",
+    size: 9
+  }) : num), label);
   return /*#__PURE__*/React.createElement("div", {
-    className: "space-y-6 max-w-5xl mx-auto"
+    className: "space-y-4 max-w-5xl mx-auto"
   }, /*#__PURE__*/React.createElement("h2", {
     className: "text-2xl font-bold text-gray-800 flex items-center gap-2"
   }, /*#__PURE__*/React.createElement(Icon, {
@@ -102,22 +205,91 @@ window.POSGrading = () => {
     className: "text-red-700",
     size: 24
   }), " \u0E23\u0E30\u0E1A\u0E1A\u0E43\u0E2B\u0E49\u0E04\u0E30\u0E41\u0E19\u0E19 (POS Scan)"), /*#__PURE__*/React.createElement("div", {
-    className: "grid grid-cols-1 md:grid-cols-3 gap-6"
+    className: "bg-white rounded-xl border border-gray-200 shadow-sm p-4"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "md:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4"
+    className: "flex items-center gap-2 mb-3 flex-wrap"
+  }, /*#__PURE__*/React.createElement(Step, {
+    num: "1",
+    label: "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E49\u0E2D\u0E07",
+    done: !!selectedClass
+  }), /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-chevron-right",
+    size: 10,
+    className: "text-gray-300"
+  }), /*#__PURE__*/React.createElement(Step, {
+    num: "2",
+    label: "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E27\u0E34\u0E0A\u0E32",
+    done: !!selectedCourseId
+  }), /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-chevron-right",
+    size: 10,
+    className: "text-gray-300"
+  }), /*#__PURE__*/React.createElement(Step, {
+    num: "3",
+    label: "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E07\u0E32\u0E19",
+    done: !!selectedAssign
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-1 sm:grid-cols-3 gap-3"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    className: "block text-sm font-bold text-gray-700 mb-1"
-  }, "\u0E0A\u0E34\u0E49\u0E19\u0E07\u0E32\u0E19 / \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E31\u0E48\u0E07"), assignments.length === 0 ? /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-orange-500 p-2 bg-orange-50 rounded border border-orange-200"
-  }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E0A\u0E34\u0E49\u0E19\u0E07\u0E32\u0E19") : /*#__PURE__*/React.createElement("select", {
-    className: "w-full p-2 border border-gray-300 rounded bg-gray-50 text-sm",
-    value: selectedAssignment,
-    onChange: e => setSelectedAssignment(e.target.value)
-  }, assignments.map(a => /*#__PURE__*/React.createElement("option", {
+    className: "block text-xs font-bold text-gray-500 mb-1"
+  }, "1. \u0E2B\u0E49\u0E2D\u0E07\u0E40\u0E23\u0E35\u0E22\u0E19"), /*#__PURE__*/React.createElement("select", {
+    value: selectedClass,
+    onChange: e => setSelectedClass(e.target.value),
+    className: "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "\u2014 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E49\u0E2D\u0E07 \u2014"), allClasses.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c
+  }, c)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    className: "block text-xs font-bold text-gray-500 mb-1"
+  }, "2. \u0E23\u0E32\u0E22\u0E27\u0E34\u0E0A\u0E32"), /*#__PURE__*/React.createElement("select", {
+    value: selectedCourseId,
+    disabled: !selectedClass,
+    onChange: e => setSelectedCourseId(e.target.value),
+    className: "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white disabled:opacity-50"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "\u2014 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E27\u0E34\u0E0A\u0E32 \u2014"), filteredCourses.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c.id,
+    value: c.id
+  }, c.code ? `[${c.code}] ` : '', c.name))), selectedClass && filteredCourses.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-orange-500 mt-1"
+  }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E27\u0E34\u0E0A\u0E32\u0E17\u0E35\u0E48\u0E1C\u0E39\u0E01\u0E01\u0E31\u0E1A\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    className: "block text-xs font-bold text-gray-500 mb-1"
+  }, "3. \u0E0A\u0E34\u0E49\u0E19\u0E07\u0E32\u0E19"), /*#__PURE__*/React.createElement("select", {
+    value: selectedAssign?.id || '',
+    disabled: !selectedCourseId,
+    onChange: e => setSelectedAssign(filteredAssigns.find(a => a.id === e.target.value) || null),
+    className: "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white disabled:opacity-50"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "\u2014 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E07\u0E32\u0E19 \u2014"), filteredAssigns.map(a => /*#__PURE__*/React.createElement("option", {
     key: a.id,
-    value: a.title
-  }, a.title, a.maxScore ? ` (${a.maxScore} คะแนน)` : '')))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    className: "block text-sm font-bold text-gray-700 mb-3"
+    value: a.id
+  }, a.title, a.chapterLabel ? ` (${a.chapterLabel})` : ''))), selectedCourseId && filteredAssigns.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-orange-500 mt-1"
+  }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19\u0E27\u0E34\u0E0A\u0E32\u0E19\u0E35\u0E49"))), ready && /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 flex items-center gap-2 flex-wrap text-xs"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "bg-red-100 text-red-700 font-bold px-2 py-1 rounded-full"
+  }, selectedClass), /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-chevron-right",
+    size: 9,
+    className: "text-gray-400"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded-full"
+  }, filteredCourses.find(c => c.id === selectedCourseId)?.name), /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-chevron-right",
+    size: 9,
+    className: "text-gray-400"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full"
+  }, selectedAssign.title, " \xB7 \u0E40\u0E15\u0E47\u0E21 ", maxScore))), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-1 md:grid-cols-3 gap-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: `md:col-span-1 bg-white p-5 rounded-xl shadow-sm border space-y-4 ${ready ? 'border-gray-200' : 'border-gray-100 opacity-60 pointer-events-none'}`
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    className: "block text-sm font-bold text-gray-700 mb-2"
   }, "1. \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E25\u0E47\u0E2D\u0E04\u0E04\u0E30\u0E41\u0E19\u0E19"), /*#__PURE__*/React.createElement("div", {
     className: "flex flex-wrap gap-2"
   }, [10, 9, 8, 7, 5, null].map(score => /*#__PURE__*/React.createElement("button", {
@@ -136,7 +308,7 @@ window.POSGrading = () => {
     type: "text",
     value: scanInput,
     onChange: e => setScanInput(e.target.value),
-    placeholder: "\u0E2A\u0E41\u0E01\u0E19\u0E23\u0E2B\u0E31\u0E2A...",
+    placeholder: ready ? 'สแกนรหัสนักเรียน...' : 'เลือกห้อง/วิชา/งานก่อน',
     className: "w-full p-4 border-2 border-yellow-400 rounded-lg bg-yellow-50 text-center text-xl font-bold focus:outline-none focus:border-yellow-600"
   })), saving && /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-center mt-2 text-blue-500 flex items-center justify-center gap-1"
@@ -144,18 +316,93 @@ window.POSGrading = () => {
     name: "fa-spinner fa-spin",
     size: 12
   }), " \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01..."))), /*#__PURE__*/React.createElement("div", {
-    className: "md:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-[500px] flex flex-col"
+    className: "md:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col",
+    style: {
+      height: '480px'
+    }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center"
-  }, /*#__PURE__*/React.createElement("h3", {
-    className: "font-bold text-gray-700 flex items-center gap-2"
+    className: "flex border-b border-gray-200 bg-gray-50"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setRightTab('roster'),
+    className: `flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${rightTab === 'roster' ? 'bg-white text-red-700 border-b-2 border-red-600' : 'text-gray-500 hover:text-gray-700'}`
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-users",
+    size: 13
+  }), " \u0E23\u0E32\u0E22\u0E0A\u0E37\u0E48\u0E2D\u0E19\u0E31\u0E01\u0E40\u0E23\u0E35\u0E22\u0E19", rosterStudents.length > 0 && /*#__PURE__*/React.createElement("span", {
+    className: `text-xs font-bold rounded-full px-1.5 py-0.5 leading-none ${ungradedCount > 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`
+  }, gradedCount, "/", rosterStudents.length)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setRightTab('log'),
+    className: `flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition-colors ${rightTab === 'log' ? 'bg-white text-red-700 border-b-2 border-red-600' : 'text-gray-500 hover:text-gray-700'}`
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "fa-fire",
-    size: 14,
+    size: 13,
     className: "text-orange-500"
-  }), " \u0E04\u0E30\u0E41\u0E19\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 (Real-time)"), /*#__PURE__*/React.createElement("span", {
-    className: "text-sm bg-gray-200 py-1 px-3 rounded-full"
-  }, gradeLog.length, " \u0E04\u0E19")), /*#__PURE__*/React.createElement("div", {
+  }), " \u0E04\u0E30\u0E41\u0E19\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", gradeLog.length > 0 && /*#__PURE__*/React.createElement("span", {
+    className: "bg-orange-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none"
+  }, gradeLog.length))), rightTab === 'roster' && /*#__PURE__*/React.createElement(React.Fragment, null, ready && rosterStudents.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "px-4 py-2.5 border-b border-gray-100 flex gap-2 text-xs bg-gray-50/50"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-check-circle",
+    size: 10
+  }), " \u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27 ", gradedCount), /*#__PURE__*/React.createElement("span", {
+    className: "bg-red-100 text-red-600 font-bold px-2 py-1 rounded-full flex items-center gap-1"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-times-circle",
+    size: 10
+  }), " \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 ", ungradedCount)), /*#__PURE__*/React.createElement("div", {
+    className: "flex-1 overflow-y-auto p-3 space-y-1"
+  }, !ready ? /*#__PURE__*/React.createElement("div", {
+    className: "h-full flex flex-col items-center justify-center text-gray-400"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-hand-point-up",
+    size: 36,
+    className: "mb-3 opacity-40"
+  }), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm"
+  }, "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E49\u0E2D\u0E07 \u2192 \u0E27\u0E34\u0E0A\u0E32 \u2192 \u0E07\u0E32\u0E19 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19")) : rosterLoading ? /*#__PURE__*/React.createElement("div", {
+    className: "h-full flex items-center justify-center text-gray-400"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-spinner fa-spin",
+    size: 22,
+    className: "mr-2"
+  }), " \u0E01\u0E33\u0E25\u0E31\u0E07\u0E42\u0E2B\u0E25\u0E14...") : rosterStudents.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    className: "h-full flex flex-col items-center justify-center text-gray-400"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "fa-users",
+    size: 36,
+    className: "mb-2 opacity-40"
+  }), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm"
+  }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E19\u0E31\u0E01\u0E40\u0E23\u0E35\u0E22\u0E19\u0E43\u0E19\u0E2B\u0E49\u0E2D\u0E07 ", selectedClass)) : rosterStudents.map(s => {
+    const graded = gradedMap[s.id];
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      className: `flex items-center gap-3 px-3 py-2 rounded-lg border text-sm transition-colors
+                                                ${graded ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`
+    }, /*#__PURE__*/React.createElement("div", {
+      className: `w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold
+                                                ${graded ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}`
+    }, graded ? /*#__PURE__*/React.createElement(Icon, {
+      name: "fa-check",
+      size: 10
+    }) : s.no), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 min-w-0"
+    }, /*#__PURE__*/React.createElement("p", {
+      className: `font-medium truncate ${graded ? 'text-green-800' : 'text-gray-700'}`
+    }, s.name), /*#__PURE__*/React.createElement("p", {
+      className: "text-xs text-gray-400"
+    }, s.id)), /*#__PURE__*/React.createElement("div", {
+      className: "flex-shrink-0"
+    }, graded ? /*#__PURE__*/React.createElement("span", {
+      className: "font-black text-green-600 text-base"
+    }, graded.score, /*#__PURE__*/React.createElement("span", {
+      className: "text-xs font-normal text-gray-400"
+    }, "/", maxScore)) : /*#__PURE__*/React.createElement("span", {
+      className: "text-xs text-gray-400"
+    }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49")));
+  }))), rightTab === 'log' && /*#__PURE__*/React.createElement("div", {
     className: "flex-1 overflow-y-auto p-4 space-y-2"
   }, gradeLog.length === 0 ? /*#__PURE__*/React.createElement("div", {
     className: "h-full flex flex-col items-center justify-center text-gray-400"
@@ -163,7 +410,7 @@ window.POSGrading = () => {
     name: "fa-barcode",
     size: 40,
     className: "mb-3 opacity-50"
-  }), /*#__PURE__*/React.createElement("p", null, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E43\u0E2B\u0E49\u0E04\u0E30\u0E41\u0E19\u0E19")) : gradeLog.map((log, i) => /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("p", null, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E43\u0E2B\u0E49\u0E04\u0E30\u0E41\u0E19\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49")) : gradeLog.map((log, i) => /*#__PURE__*/React.createElement("div", {
     key: log.firestoreId || i,
     className: "p-3 rounded border border-gray-100 flex items-center justify-between bg-white shadow-sm animate-fade-in-down"
   }, /*#__PURE__*/React.createElement("div", {
@@ -173,8 +420,8 @@ window.POSGrading = () => {
   }, log.no), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     className: "font-bold text-sm"
   }, log.name), /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-gray-500"
-  }, log.studentId || log.id))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "text-xs text-gray-400"
+  }, log.class))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     className: "text-xl font-black text-green-600"
   }, log.score), /*#__PURE__*/React.createElement("span", {
     className: "text-gray-400 text-sm"
@@ -185,6 +432,8 @@ window.POSGrading = () => {
   }, /*#__PURE__*/React.createElement("h3", {
     className: "text-xl font-bold mb-2"
   }, currentScannedStudent?.name), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-500 mb-1 text-sm"
+  }, currentScannedStudent?.class), /*#__PURE__*/React.createElement("p", {
     className: "text-gray-500 mb-6"
   }, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E04\u0E30\u0E41\u0E19\u0E19 (\u0E40\u0E15\u0E47\u0E21 ", maxScore, ")"), /*#__PURE__*/React.createElement("input", {
     type: "number",
@@ -219,6 +468,7 @@ window.GradeManager = () => {
   const [selCourse, setSelCourse] = useState(null);
   const [students, setStudents] = useState([]);
   const [scores, setScores] = useState({}); // {studentId: {_docId, ...fields}}
+  const [gradeAverages, setGradeAverages] = useState({}); // {studentId: {label: {score, count}}}
   const [filterClass, setFilterClass] = useState('ทั้งหมด');
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
@@ -265,6 +515,86 @@ window.GradeManager = () => {
     }).catch(() => setStudents([])).finally(() => setLoadingStudents(false));
   }, [selCourse?.id]);
 
+  /* โหลดค่าเฉลี่ยจากงานที่ผูกกับ continuousItem ของรายวิชานี้ */
+  useEffect(() => {
+    if (!selCourse || students.length === 0) {
+      setGradeAverages({});
+      return;
+    }
+    const items = getItems(selCourse);
+    const studentIds = new Set(students.map(s => s.id));
+
+    /* 1. โหลด assignments ที่ผูกกับ course นี้ */
+    db.collection('assignments').where('targetCourseId', '==', selCourse.id).get().then(aSnap => {
+      const allAssign = aSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+      if (allAssign.length === 0) {
+        setGradeAverages({});
+        return;
+      }
+
+      /* 2. แมป chapterLabel → [assignmentTitle] */
+      const byChapter = {}; // {chapterLabel: [{title, maxScore}]}
+      allAssign.forEach(a => {
+        if (!a.chapterLabel) return;
+        if (!byChapter[a.chapterLabel]) byChapter[a.chapterLabel] = [];
+        byChapter[a.chapterLabel].push({
+          title: a.title,
+          maxScore: Number(a.maxScore) || 10
+        });
+      });
+      const allTitles = allAssign.map(a => a.title);
+      if (allTitles.length === 0) {
+        setGradeAverages({});
+        return;
+      }
+
+      /* 3. โหลด grades ของงานเหล่านี้ (chunk ทีละ 10) */
+      const chunks = [];
+      for (let i = 0; i < allTitles.length; i += 10) chunks.push(allTitles.slice(i, i + 10));
+      return Promise.all(chunks.map(ch => db.collection('grades').where('assignment', 'in', ch).get())).then(snaps => {
+        /* 4. จัดกลุ่มคะแนนต่อ studentId+assignmentTitle */
+        const gradeMap = {}; // {studentId: {title: [scores]}}
+        snaps.forEach(snap => snap.docs.forEach(d => {
+          const g = d.data();
+          if (!studentIds.has(g.studentId)) return;
+          if (!gradeMap[g.studentId]) gradeMap[g.studentId] = {};
+          if (!gradeMap[g.studentId][g.assignment]) gradeMap[g.studentId][g.assignment] = [];
+          gradeMap[g.studentId][g.assignment].push(Number(g.score));
+        }));
+
+        /* 5. คำนวณค่าเฉลี่ยต่อ student ต่อ chapter
+              สูตร: เฉลี่ยคะแนนทุกชิ้นในบท → cap ที่ item.score */
+        const result = {};
+        students.forEach(s => {
+          items.forEach(item => {
+            const assignsInChapter = byChapter[item.label];
+            if (!assignsInChapter || assignsInChapter.length === 0) return;
+
+            /* เก็บคะแนนทุกครั้งของทุกชิ้นงานในบทนี้ */
+            const allScores = [];
+            assignsInChapter.forEach(a => {
+              const sc = gradeMap[s.id]?.[a.title];
+              if (sc) allScores.push(...sc);
+            });
+            if (allScores.length === 0) return;
+            const avg = allScores.reduce((sum, v) => sum + v, 0) / allScores.length;
+            const capped = Math.round(Math.min(avg, Number(item.score)) * 10) / 10;
+            if (!result[s.id]) result[s.id] = {};
+            result[s.id][item.label] = {
+              score: capped,
+              count: allScores.length,
+              assigns: assignsInChapter.length
+            };
+          });
+        });
+        setGradeAverages(result);
+      });
+    }).catch(() => {});
+  }, [selCourse?.id, students]);
+
   /* โหลดคะแนน real-time */
   useEffect(() => {
     if (!selCourse) return;
@@ -291,10 +621,20 @@ window.GradeManager = () => {
     label: 'คะแนนเก็บ',
     score: Number(c?.continuous) || 50
   }];
-  const calcTotal = (sd, c) => {
+
+  /* คืนค่าคะแนนที่ใช้จริง: ถ้ามี POS-average ให้ใช้แทน manual */
+  const effectiveCont = (studentId, label) => {
+    const auto = gradeAverages[studentId]?.[label];
+    if (auto) return auto.score;
+    return scores[studentId]?.[`cont_${label}`] ?? null;
+  };
+  const calcTotal = (sd, c, studentId) => {
     if (!c) return 0;
     const items = getItems(c);
-    const contSum = items.reduce((s, it) => s + Number(sd?.[`cont_${it.label}`] || 0), 0);
+    const contSum = items.reduce((s, it) => {
+      const v = studentId ? effectiveCont(studentId, it.label) : sd?.[`cont_${it.label}`];
+      return s + Number(v || 0);
+    }, 0);
     const mid = Number(sd?.midterm || 0);
     const midR = Number(sd?.midtermRetake || 0);
     const fin = Number(sd?.final || 0);
@@ -399,10 +739,10 @@ window.GradeManager = () => {
     const header = ['เลขที่', 'รหัส', q('ชื่อ-สกุล'), q('ห้อง'), ...items.map(it => q(`${it.label}(${it.score})`)), q(`รวมเก็บ(${Number(selCourse.continuous || 50)})`), q(`กลางภาค(${midMax})`), q(`แก้กลางภาค(${midMax})`), q(`ปลายภาค(${finMax})`), 'รวม(100)', q('เกรด'), 'GPA'].join(',');
     const rows = filteredStudents.map(s => {
       const sd = scores[s.id] || {};
-      const total = calcTotal(sd, selCourse);
+      const total = calcTotal(sd, selCourse, s.id);
       const grade = calcGrade(total);
-      const contSum = items.reduce((sum, it) => sum + Number(sd[`cont_${it.label}`] || 0), 0);
-      return [s.no, s.id, q(s.name), q(s.class), ...items.map(it => sd[`cont_${it.label}`] ?? ''), contSum, sd.midterm ?? '', sd.midtermRetake ?? '', sd.final ?? '', total || '', grade.letter, grade.gpa].join(',');
+      const contSum = items.reduce((sum, it) => sum + Number(effectiveCont(s.id, it.label) || 0), 0);
+      return [s.no, s.id, q(s.name), q(s.class), ...items.map(it => effectiveCont(s.id, it.label) ?? ''), contSum, sd.midterm ?? '', sd.midtermRetake ?? '', sd.final ?? '', total || '', grade.letter, grade.gpa].join(',');
     }).join('\n');
     const blob = new Blob([bom + header + '\n' + rows], {
       type: 'text/csv;charset=utf-8;'
@@ -426,7 +766,7 @@ window.GradeManager = () => {
   /* สรุปรายห้อง */
   const classSummary = classList.filter(c => c !== 'ทั้งหมด').map(cls => {
     const ss = students.filter(s => s.class === cls);
-    const totals = ss.map(s => calcTotal(scores[s.id] || {}, selCourse));
+    const totals = ss.map(s => calcTotal(scores[s.id] || {}, selCourse, s.id));
     const filled = totals.filter(t => t > 0);
     const avg = filled.length ? (filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(1) : '-';
     const dist = {};
@@ -449,29 +789,33 @@ window.GradeManager = () => {
     bg: 'bg-blue-50'
   }, {
     label: 'กรอกข้อมูลแล้ว',
-    value: filteredStudents.filter(s => scores[s.id]).length,
+    value: filteredStudents.filter(s => scores[s.id] || gradeAverages[s.id]).length,
     color: 'text-green-600',
     bg: 'bg-green-50'
   }, {
     label: 'คะแนนเฉลี่ย',
     value: (() => {
-      const ts = filteredStudents.map(s => calcTotal(scores[s.id] || {}, selCourse)).filter(t => t > 0);
+      const ts = filteredStudents.map(s => calcTotal(scores[s.id] || {}, selCourse, s.id)).filter(t => t > 0);
       return ts.length ? (ts.reduce((a, b) => a + b, 0) / ts.length).toFixed(1) : '-';
     })(),
     color: 'text-purple-600',
     bg: 'bg-purple-50'
   }, {
     label: 'ผ่าน (≥50%)',
-    value: filteredStudents.filter(s => calcTotal(scores[s.id] || {}, selCourse) >= 50).length,
+    value: filteredStudents.filter(s => calcTotal(scores[s.id] || {}, selCourse, s.id) >= 50).length,
     color: 'text-orange-600',
     bg: 'bg-orange-50'
   }];
 
-  /* ── Cell helper (plain function — NOT a React component, avoids unmount/remount on each keystroke) ── */
+  /* ── Cell helper ── */
   const renderScoreCell = (student, field, maxVal) => {
     const sd = scores[student.id] || {};
     const curVal = sd[field];
     const isEdit = editCell?.studentId === student.id && editCell?.field === field;
+
+    /* ตรวจสอบ POS auto-average */
+    const label = field.startsWith('cont_') ? field.slice(5) : null;
+    const auto = label ? gradeAverages[student.id]?.[label] : null;
     if (isEdit) return /*#__PURE__*/React.createElement("td", {
       key: `${student.id}_${field}`,
       className: "px-2 py-1 text-center bg-yellow-50"
@@ -489,6 +833,18 @@ window.GradeManager = () => {
       },
       onBlur: () => commitSave(student)
     }));
+
+    /* มีค่าคำนวณอัตโนมัติจากงานที่ผูกไว้ */
+    if (auto && curVal === undefined) return /*#__PURE__*/React.createElement("td", {
+      key: `${student.id}_${field}`,
+      className: "px-2 py-2 text-center bg-blue-50/40 cursor-pointer hover:bg-yellow-50 transition-colors",
+      onClick: () => openEdit(student.id, field, auto.score),
+      title: `เฉลี่ยจาก ${auto.count} คะแนน (${auto.assigns} ชิ้นงาน) • คลิกเพื่อแก้ไขเอง`
+    }, /*#__PURE__*/React.createElement("span", {
+      className: `text-sm ${scoreColor(auto.score, maxVal)}`
+    }, auto.score), /*#__PURE__*/React.createElement("span", {
+      className: "block text-[10px] text-blue-400 leading-none mt-0.5"
+    }, auto.assigns, "\u0E0A\u0E34\u0E49\u0E19/", auto.count, "\u0E04\u0E23\u0E31\u0E49\u0E07"));
     return /*#__PURE__*/React.createElement("td", {
       key: `${student.id}_${field}`,
       className: "px-2 py-2 text-center cursor-pointer hover:bg-yellow-50 transition-colors group",
@@ -659,10 +1015,10 @@ window.GradeManager = () => {
     className: "divide-y divide-gray-100"
   }, filteredStudents.map((s, idx) => {
     const sd = scores[s.id] || {};
-    const contSum = items.reduce((sum, it) => sum + Number(sd[`cont_${it.label}`] || 0), 0);
-    const total = calcTotal(sd, selCourse);
+    const contSum = items.reduce((sum, it) => sum + Number(effectiveCont(s.id, it.label) || 0), 0);
+    const total = calcTotal(sd, selCourse, s.id);
     const grade = calcGrade(total);
-    const hasData = Object.keys(sd).filter(k => k !== '_docId' && k !== 'studentId' && k !== 'courseId' && k !== 'updatedAt').length > 0;
+    const hasData = Object.keys(sd).filter(k => k !== '_docId' && k !== 'studentId' && k !== 'courseId' && k !== 'updatedAt').length > 0 || !!gradeAverages[s.id];
     const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
     const midUsed = Math.max(Number(sd.midterm || 0), Number(sd.midtermRetake || 0));
     return /*#__PURE__*/React.createElement("tr", {
@@ -732,7 +1088,7 @@ window.GradeManager = () => {
       className: "text-gray-200"
     }, "-")));
   })), filteredStudents.length > 0 && (() => {
-    const validTotals = filteredStudents.map(s => calcTotal(scores[s.id] || {}, selCourse)).filter(t => t > 0);
+    const validTotals = filteredStudents.map(s => calcTotal(scores[s.id] || {}, selCourse, s.id)).filter(t => t > 0);
     const avg = validTotals.length ? (validTotals.reduce((a, b) => a + b, 0) / validTotals.length).toFixed(1) : '-';
     return /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
       className: "bg-gray-100 font-bold text-xs text-gray-600 border-t-2 border-gray-300"
@@ -740,8 +1096,8 @@ window.GradeManager = () => {
       colSpan: 4,
       className: "px-3 py-2 border-r border-gray-300"
     }, "\u0E23\u0E27\u0E21 ", filteredStudents.length, " \u0E04\u0E19 / \u0E01\u0E23\u0E2D\u0E01\u0E41\u0E25\u0E49\u0E27 ", validTotals.length, " \u0E04\u0E19"), items.map(it => {
-      const vals = filteredStudents.map(s => Number(scores[s.id]?.[`cont_${it.label}`] || 0)).filter((_, i) => scores[filteredStudents[i].id]);
-      const a = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '-';
+      const vals = filteredStudents.map(s => effectiveCont(s.id, it.label)).filter(v => v !== null && v !== undefined);
+      const a = vals.length ? (vals.reduce((a, b) => a + Number(b), 0) / vals.length).toFixed(1) : '-';
       return /*#__PURE__*/React.createElement("td", {
         key: it.label,
         className: "px-3 py-2 text-center text-blue-700"

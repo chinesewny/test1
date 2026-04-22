@@ -130,6 +130,9 @@ window.StudentDashboard = ({
   });
   const [announcements, setAnnouncements] = useStateDash([]);
   const [annLoading, setAnnLoading] = useStateDash(true);
+  const [assignments, setAssignments] = useStateDash([]);
+  const [subMap, setSubMap] = useStateDash({}); // {assignmentTitle: {status, score}}
+
   useEffectDash(() => {
     const loadStats = async () => {
       try {
@@ -142,6 +145,25 @@ window.StudentDashboard = ({
       } catch {}
     };
     loadStats();
+  }, [user.id]);
+
+  /* โหลดงานทั้งหมด + สถานะการส่งของนักเรียน */
+  useEffectDash(() => {
+    Promise.all([db.collection('assignments').orderBy('createdAt', 'desc').get(), db.collection('submissions').where('studentId', '==', user.id).get()]).then(([aSnap, sSnap]) => {
+      setAssignments(aSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })));
+      const map = {};
+      sSnap.docs.forEach(d => {
+        const s = d.data();
+        map[s.assignmentTitle] = {
+          status: s.status,
+          score: s.score
+        };
+      });
+      setSubMap(map);
+    }).catch(() => {});
   }, [user.id]);
 
   /* โหลดประกาศจากรายวิชาที่ห้องเรียนของนักเรียนอยู่ */
@@ -205,7 +227,99 @@ window.StudentDashboard = ({
     className: "text-sm text-gray-500"
   }, c.label), /*#__PURE__*/React.createElement("p", {
     className: "text-2xl font-bold"
-  }, c.val))))), /*#__PURE__*/React.createElement("div", {
+  }, c.val))))), assignments.length > 0 && (() => {
+    /* จัดกลุ่มตามรายวิชา+บท */
+    const grouped = {}; // {courseKey: {name, chapters: {label: [assignments]}}}
+    assignments.forEach(a => {
+      const courseKey = a.targetCourseId || '__none__';
+      const courseName = a.targetCourseName || a.course || 'ไม่ระบุรายวิชา';
+      if (!grouped[courseKey]) grouped[courseKey] = {
+        name: courseName,
+        chapters: {}
+      };
+      const chap = a.chapterLabel || '__none__';
+      if (!grouped[courseKey].chapters[chap]) grouped[courseKey].chapters[chap] = [];
+      grouped[courseKey].chapters[chap].push(a);
+    });
+    const totalCount = assignments.length;
+    const submittedCount = assignments.filter(a => subMap[a.title]).length;
+    const pendingCount = assignments.filter(a => subMap[a.title]?.status === 'pending').length;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "px-6 py-4 border-b border-gray-100 flex items-center gap-2 flex-wrap"
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "fa-tasks",
+      size: 16,
+      className: "text-red-600"
+    }), /*#__PURE__*/React.createElement("h3", {
+      className: "font-bold text-lg text-gray-800"
+    }, "\u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E21\u0E2D\u0E1A\u0E2B\u0E21\u0E32\u0E22"), /*#__PURE__*/React.createElement("div", {
+      className: "ml-auto flex gap-2 text-xs"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full"
+    }, "\u0E2A\u0E48\u0E07\u0E41\u0E25\u0E49\u0E27 ", submittedCount, "/", totalCount), pendingCount > 0 && /*#__PURE__*/React.createElement("span", {
+      className: "bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full"
+    }, "\u0E23\u0E2D\u0E15\u0E23\u0E27\u0E08 ", pendingCount))), /*#__PURE__*/React.createElement("div", {
+      className: "p-4 space-y-4"
+    }, Object.entries(grouped).map(([ck, cg]) => /*#__PURE__*/React.createElement("div", {
+      key: ck
+    }, Object.keys(grouped).length > 1 && /*#__PURE__*/React.createElement("p", {
+      className: "text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1"
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "fa-book-open",
+      size: 11
+    }), " ", cg.name), /*#__PURE__*/React.createElement("div", {
+      className: "space-y-3"
+    }, Object.entries(cg.chapters).map(([chapKey, chapAssigns]) => /*#__PURE__*/React.createElement("div", {
+      key: chapKey
+    }, chapKey !== '__none__' && /*#__PURE__*/React.createElement("p", {
+      className: "text-xs font-bold text-blue-600 mb-1.5 flex items-center gap-1"
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "fa-layer-group",
+      size: 10
+    }), " ", chapKey), /*#__PURE__*/React.createElement("div", {
+      className: "space-y-1.5"
+    }, chapAssigns.map(a => {
+      const sub = subMap[a.title];
+      const isReviewed = sub?.status === 'reviewed';
+      const isPending = sub?.status === 'pending';
+      const notSent = !sub;
+      return /*#__PURE__*/React.createElement("div", {
+        key: a.id,
+        className: `flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm
+                                                                    ${isReviewed ? 'bg-green-50 border-green-200' : isPending ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200'}`
+      }, /*#__PURE__*/React.createElement("div", {
+        className: `w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold
+                                                                    ${isReviewed ? 'bg-green-500 text-white' : isPending ? 'bg-yellow-500 text-white' : 'bg-gray-300 text-white'}`
+      }, isReviewed ? /*#__PURE__*/React.createElement(Icon, {
+        name: "fa-check",
+        size: 10
+      }) : isPending ? /*#__PURE__*/React.createElement(Icon, {
+        name: "fa-clock",
+        size: 10
+      }) : /*#__PURE__*/React.createElement(Icon, {
+        name: "fa-minus",
+        size: 10
+      })), /*#__PURE__*/React.createElement("div", {
+        className: "flex-1 min-w-0"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: `font-medium truncate ${notSent ? 'text-gray-500' : 'text-gray-800'}`
+      }, a.title), a.deadline && /*#__PURE__*/React.createElement("p", {
+        className: "text-xs text-gray-400"
+      }, "\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E2A\u0E48\u0E07 ", a.deadline)), /*#__PURE__*/React.createElement("div", {
+        className: "flex-shrink-0 text-right"
+      }, isReviewed && sub.score !== undefined ? /*#__PURE__*/React.createElement("span", {
+        className: "font-black text-green-600"
+      }, sub.score, /*#__PURE__*/React.createElement("span", {
+        className: "text-xs font-normal text-gray-400"
+      }, "/", a.maxScore)) : isPending ? /*#__PURE__*/React.createElement("span", {
+        className: "text-xs text-yellow-600 font-bold"
+      }, "\u0E23\u0E2D\u0E15\u0E23\u0E27\u0E08") : /*#__PURE__*/React.createElement("span", {
+        className: "text-xs text-gray-400"
+      }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E2A\u0E48\u0E07")));
+    })))))))));
+  })(), /*#__PURE__*/React.createElement("div", {
     className: "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
   }, /*#__PURE__*/React.createElement("div", {
     className: "px-6 py-4 border-b border-gray-100 flex items-center gap-2"

@@ -9,11 +9,14 @@ window.AssignmentReview = () => {
     description: '',
     deadline: '',
     maxScore: 10,
-    course: ''
+    targetCourseId: '',
+    targetCourseName: '',
+    chapterLabel: ''
   };
   const [tab, setTab] = useState('assign');
   const [assignments, setAssignments] = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -33,6 +36,10 @@ window.AssignmentReview = () => {
       id: d.id,
       ...d.data()
     }))), () => {});
+    db.collection('courses').orderBy('name').get().then(snap => setCourses(snap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    })))).catch(() => {});
     return () => {
       unsubA();
       unsubS();
@@ -58,8 +65,13 @@ window.AssignmentReview = () => {
     if (!form.title.trim()) return alert('กรุณากรอกชื่องาน');
     setSaving(true);
     const data = {
-      ...form,
+      title: form.title.trim(),
+      description: form.description || '',
+      deadline: form.deadline || '',
       maxScore: Number(form.maxScore) || 10,
+      targetCourseId: form.targetCourseId || '',
+      targetCourseName: form.targetCourseName || '',
+      chapterLabel: form.chapterLabel || '',
       createdAt: editId ? form.createdAt : firebase.firestore.FieldValue.serverTimestamp()
     };
     if (editId) await db.collection('assignments').doc(editId).update(data);else await db.collection('assignments').add(data);
@@ -134,10 +146,14 @@ window.AssignmentReview = () => {
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex-1"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 mb-1"
+      className: "flex items-center gap-2 mb-1 flex-wrap"
     }, /*#__PURE__*/React.createElement("h3", {
       className: "font-bold text-lg text-gray-800"
-    }, a.title), a.course && /*#__PURE__*/React.createElement("span", {
+    }, a.title), a.targetCourseName && /*#__PURE__*/React.createElement("span", {
+      className: "text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"
+    }, a.targetCourseName), a.chapterLabel && /*#__PURE__*/React.createElement("span", {
+      className: "text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full"
+    }, "\u0E1A\u0E17: ", a.chapterLabel), !a.targetCourseName && a.course && /*#__PURE__*/React.createElement("span", {
       className: "text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"
     }, a.course)), a.description && /*#__PURE__*/React.createElement("p", {
       className: "text-sm text-gray-500 mb-2"
@@ -305,17 +321,43 @@ window.AssignmentReview = () => {
       maxScore: e.target.value
     })),
     className: "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
-  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-1 sm:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "text-sm font-medium text-gray-600 mb-1 block"
-  }, "\u0E23\u0E32\u0E22\u0E27\u0E34\u0E0A\u0E32"), /*#__PURE__*/React.createElement("input", {
-    value: form.course,
+  }, "\u0E23\u0E32\u0E22\u0E27\u0E34\u0E0A\u0E32 (\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E01\u0E31\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E04\u0E30\u0E41\u0E19\u0E19)"), /*#__PURE__*/React.createElement("select", {
+    value: form.targetCourseId,
+    onChange: e => {
+      const c = courses.find(x => x.id === e.target.value);
+      setForm(f => ({
+        ...f,
+        targetCourseId: e.target.value,
+        targetCourseName: c?.name || '',
+        chapterLabel: ''
+      }));
+    },
+    className: "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "\u2014 \u0E44\u0E21\u0E48\u0E23\u0E30\u0E1A\u0E38 \u2014"), courses.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c.id,
+    value: c.id
+  }, c.code ? `[${c.code}] ` : '', c.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    className: "text-sm font-medium text-gray-600 mb-1 block"
+  }, "\u0E1A\u0E17 / \u0E01\u0E25\u0E38\u0E48\u0E21\u0E04\u0E30\u0E41\u0E19\u0E19\u0E40\u0E01\u0E47\u0E1A"), /*#__PURE__*/React.createElement("select", {
+    value: form.chapterLabel,
     onChange: e => setForm(f => ({
       ...f,
-      course: e.target.value
+      chapterLabel: e.target.value
     })),
-    placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E0833201 \u0E20\u0E32\u0E29\u0E32\u0E08\u0E35\u0E19 5",
-    className: "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
-  })), /*#__PURE__*/React.createElement("div", {
+    disabled: !form.targetCourseId,
+    className: "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "\u2014 \u0E44\u0E21\u0E48\u0E23\u0E30\u0E1A\u0E38 \u2014"), (courses.find(c => c.id === form.targetCourseId)?.continuousItems || []).map(it => /*#__PURE__*/React.createElement("option", {
+    key: it.label,
+    value: it.label
+  }, it.label, " (\u0E40\u0E15\u0E47\u0E21 ", it.score, ")"))))), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-3 pt-2"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowForm(false),
