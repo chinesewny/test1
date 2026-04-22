@@ -38,14 +38,15 @@ window.POSGrading = () => {
 
   /* ── Step 0: โหลดห้อง / วิชา / งาน ทั้งหมดครั้งเดียว ── */
   useEffect(() => {
-    Promise.all([db.collection('students').get(), db.collection('courses').orderBy('name').get(), db.collection('assignments').orderBy('createdAt', 'desc').get()]).then(([sSnap, cSnap, aSnap]) => {
+    Promise.all([db.collection('students').get(), db.collection('courses').get(), db.collection('assignments').get()]).then(([sSnap, cSnap, aSnap]) => {
       const classes = [...new Set(sSnap.docs.map(d => d.data().class).filter(Boolean))].sort();
       setAllClasses(classes);
       if (classes.length === 1) setSelectedClass(classes[0]);
-      setAllCourses(cSnap.docs.map(d => ({
+      const courseList = cSnap.docs.map(d => ({
         id: d.id,
         ...d.data()
-      })));
+      })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th'));
+      setAllCourses(courseList);
       setAllAssignments(aSnap.docs.map(d => ({
         id: d.id,
         ...d.data()
@@ -53,16 +54,15 @@ window.POSGrading = () => {
     }).catch(() => {});
   }, []);
 
-  /* ── Step 1→2: กรองวิชาตามห้อง ── */
+  /* ── Step 1→2: เมื่อเลือกห้องแล้ว แสดงวิชาทั้งหมด ── */
   useEffect(() => {
     setSelectedCourseId('');
     setFilteredCourses([]);
     setFilteredAssigns([]);
     setSelectedAssign(null);
     if (!selectedClass) return;
-    const fc = allCourses.filter(c => (c.classrooms || []).includes(selectedClass));
-    setFilteredCourses(fc);
-    if (fc.length === 1) setSelectedCourseId(fc[0].id);
+    setFilteredCourses(allCourses);
+    if (allCourses.length === 1) setSelectedCourseId(allCourses[0].id);
   }, [selectedClass, allCourses]);
 
   /* ── Step 2→3: กรองงานตามวิชา ── */
@@ -252,9 +252,7 @@ window.POSGrading = () => {
   }, "\u2014 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E27\u0E34\u0E0A\u0E32 \u2014"), filteredCourses.map(c => /*#__PURE__*/React.createElement("option", {
     key: c.id,
     value: c.id
-  }, c.code ? `[${c.code}] ` : '', c.name))), selectedClass && filteredCourses.length === 0 && /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-orange-500 mt-1"
-  }, "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E27\u0E34\u0E0A\u0E32\u0E17\u0E35\u0E48\u0E1C\u0E39\u0E01\u0E01\u0E31\u0E1A\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, c.code ? `[${c.code}] ` : '', c.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     className: "block text-xs font-bold text-gray-500 mb-1"
   }, "3. \u0E0A\u0E34\u0E49\u0E19\u0E07\u0E32\u0E19"), /*#__PURE__*/React.createElement("select", {
     value: selectedAssign?.id || '',
